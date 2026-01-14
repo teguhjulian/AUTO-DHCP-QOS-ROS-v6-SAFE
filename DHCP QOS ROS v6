@@ -1,0 +1,58 @@
+# =============================
+# AUTO DHCP QOS (ROS v6 SAFE)
+# =============================
+
+:local bwTotal 20480
+:local maxLim "20M/20M"
+:local pName "computer"
+
+# 2. Hitung jumlah client DHCP bound
+:local total 0
+:foreach i in=[/ip dhcp-server lease find where status="bound"] do={
+    :set total ($total + 1)
+}
+:if ($total < 1) do={ :set total 1 }
+
+# 3. Hitung limit per client
+:local share ($bwTotal / $total)
+:local limitAt ($share . "k/" . $share . "k")
+
+# 4. Proses setiap client DHCP
+:foreach i in=[/ip dhcp-server lease find where status="bound"] do={
+
+    :local addr [/ip dhcp-server lease get $i address]
+    :local host [/ip dhcp-server lease get $i host-name]
+    :if ($host = "") do={ :set host "User" }
+
+    :local qName ($host . "-" . $addr)
+    :local target ($addr . "/32")
+
+    # Cari queue berdasarkan comment + target
+    :local qId ""
+    :foreach q in=[/queue simple find where comment="auto"] do={
+        :if ([/queue simple get $q target] = $target) do={
+            :set qId $q
+        }
+    }
+
+    # Buat atau update queue
+    :if ($qId = "") do={
+        /queue simple add name=$qName target=$target parent=$pName max-limit=$maxLim limit-at=$limitAt comment="auto"
+    } else={
+        /queue simple set $qId name=$qName parent=$pName max-limit=$maxLim limit-at=$limitAt
+    }
+}
+
+# 5. Hapus queue client yang sudah tidak aktif
+:foreach q in=[/queue simple find where comment="auto"] do={
+    :local targ [/queue simple get $q target]
+    :local active 0
+    :foreach i in=[/ip dhcp-server lease find where status="bound"] do={
+        :if ($targ = ([/ip dhcp-server lease get $i address] . "/32")) do={
+            :set active 1
+        }
+    }
+    :if ($active = 0) do={
+        /queue simple remove $q
+    }
+}
