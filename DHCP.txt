@@ -1,0 +1,61 @@
+:local bwTotal 10240
+:local maxLim "10240k/10240k"
+:local pName "computer"
+
+# Ambil lease bound sekali
+:local boundLeases [/ip dhcp-server lease find where status="bound"]
+
+# Jika tidak ada client ? hapus semua queue auto
+:if ([:len $boundLeases] = 0) do={
+    :foreach q in=[/queue simple find where comment="auto"] do={
+        /queue simple remove $q
+    }
+    :return
+}
+
+:local total [:len $boundLeases]
+:local share ($bwTotal / $total)
+:local limitAt ($share . "k/" . $share . "k")
+
+# Simpan target aktif
+:local activeTargets [:toarray ""]
+
+# Create / update queue
+:foreach i in=$boundLeases do={
+
+    :local addr [/ip dhcp-server lease get $i address]
+    :local host [/ip dhcp-server lease get $i host-name]
+    :if ($host = "") do={ :set host "User" }
+
+    :local qName $host
+    :local target ($addr . "/32")
+
+    :set activeTargets ($activeTargets, $target)
+
+    :local qId ""
+    :foreach q in=[/queue simple find where comment="auto"] do={
+        :if ([/queue simple get $q target] = $target) do={
+            :set qId $q
+        }
+    }
+
+    :if ($qId = "") do={
+        /queue simple add name=$qName target=$target parent=$pName max-limit=$maxLim limit-at=$limitAt comment="auto"
+    } else={
+        /queue simple set $qId parent=$pName max-limit=$maxLim limit-at=$limitAt
+    }
+}
+
+# Hapus queue yang tidak aktif
+:foreach q in=[/queue simple find where comment="auto"] do={
+    :local targ [/queue simple get $q target]
+    :local isActive 0
+
+    :foreach act in=$activeTargets do={
+        :if ($targ = $act) do={ :set isActive 1 }
+    }
+
+    :if ($isActive = 0) do={
+        /queue simple remove $q
+    }
+}
