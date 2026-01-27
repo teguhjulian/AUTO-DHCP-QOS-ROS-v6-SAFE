@@ -1,14 +1,15 @@
-:local bwTotal 10240
-:local maxLim "10240k/10240k"
-:local pName "computer"
+:local bwTotal 9216
+:local maxLim "9216k/9216k"
+:local pName "all-server"
 
 # Ambil lease bound sekali
 :local boundLeases [/ip dhcp-server lease find where status="bound"]
 
-# Jika tidak ada client ? hapus semua queue auto
+# Jika tidak ada client? hapus semua queue auto
 :if ([:len $boundLeases] = 0) do={
     :foreach q in=[/queue simple find where comment="auto"] do={
         /queue simple remove $q
+        :delay 100ms
     }
     :return
 }
@@ -24,38 +25,49 @@
 :foreach i in=$boundLeases do={
 
     :local addr [/ip dhcp-server lease get $i address]
-    :local host [/ip dhcp-server lease get $i host-name]
-    :if ($host = "") do={ :set host "User" }
-
-    :local qName $host
+    :local pos [:find $addr "." -1]
+    :local lastOctet [:pick $addr ($pos + 1) [:len $addr]]
+    :local qName ("qos-" . $lastOctet)
     :local target ($addr . "/32")
-
     :set activeTargets ($activeTargets, $target)
 
+    # Cari apakah IP ini sudah punya queue (berdasarkan TARGET)
     :local qId ""
     :foreach q in=[/queue simple find where comment="auto"] do={
         :if ([/queue simple get $q target] = $target) do={
             :set qId $q
         }
+        # Delay kecil saat searching agar CPU tidak spike
+        :delay 20ms
     }
 
     :if ($qId = "") do={
+        # Hapus nama yang sama jika ada
+        /queue simple remove [/queue simple find where name=$qName]
+        :delay 50ms
         /queue simple add name=$qName target=$target parent=$pName max-limit=$maxLim limit-at=$limitAt comment="auto"
     } else={
-        /queue simple set $qId parent=$pName max-limit=$maxLim limit-at=$limitAt
+        # Update settingan tanpa ubah nama kalau IP-nya sama
+        /queue simple set $qId name=$qName parent=$pName max-limit=$maxLim limit-at=$limitAt
     }
+
+    # Jeda setelah memproses satu user
+    :delay 100ms
 }
 
-# Hapus queue yang tidak aktif
+# Hapus queue yang tidak aktif (IP yang sudah tidak ada di DHCP Lease)
 :foreach q in=[/queue simple find where comment="auto"] do={
     :local targ [/queue simple get $q target]
     :local isActive 0
 
     :foreach act in=$activeTargets do={
         :if ($targ = $act) do={ :set isActive 1 }
+        # Delay saat verifikasi status aktif
+        :delay 20ms
     }
 
     :if ($isActive = 0) do={
         /queue simple remove $q
+        :delay 100ms
     }
 }
