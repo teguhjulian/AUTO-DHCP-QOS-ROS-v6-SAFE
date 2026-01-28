@@ -9,7 +9,7 @@
 :if ([:len $boundLeases] = 0) do={
     :foreach q in=[/queue simple find where comment="auto"] do={
         /queue simple remove $q
-        :delay 250ms
+        :delay 500ms
     }
     :return
 }
@@ -38,13 +38,13 @@
             :set qId $q
         }
         # Delay kecil saat searching agar CPU tidak spike
-        :delay 200ms
+        :delay 300ms
     }
 
     :if ($qId = "") do={
         # Hapus nama yang sama jika ada
         /queue simple remove [/queue simple find where name=$qName]
-        :delay 200ms
+        :delay 300ms
         /queue simple add name=$qName target=$target parent=$pName max-limit=$maxLim limit-at=$limitAt comment="auto"
     } else={
         # Update settingan tanpa ubah nama kalau IP-nya sama
@@ -52,7 +52,7 @@
     }
 
     # Jeda setelah memproses satu user
-    :delay 300ms
+    :delay 1s
 }
 
 # Hapus queue yang tidak aktif (IP yang sudah tidak ada di DHCP Lease)
@@ -63,11 +63,11 @@
     :foreach act in=$activeTargets do={
         :if ($targ = $act) do={ :set isActive 1 }
         # Delay saat verifikasi status aktif
-        :delay 150ms
+        :delay 300ms
     }
 
     :if ($isActive = 0) do={
         /queue simple remove $q
-        :delay 300ms
+        :delay 1s
     }
 }
